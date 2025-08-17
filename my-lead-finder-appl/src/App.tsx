@@ -36,10 +36,7 @@ type SearchState = "idle" | "loading" | "success" | "error";
 // -----------------------
 const loadGoogleMapsSDK = (): Promise<void> => {
   return new Promise((resolve, reject) => {
-    if ((window as any).google) {
-      resolve();
-      return;
-    }
+    if ((window as any).google) return resolve();
 
     const script = document.createElement("script");
     script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_PLACES_API_KEY}&libraries=places`;
@@ -64,10 +61,7 @@ const App: React.FC = () => {
   // -----------------------
   const saveLead = async (business: Business) => {
     try {
-      await addDoc(collection(db, "leads"), {
-        ...business,
-        timestamp: Timestamp.now(),
-      });
+      await addDoc(collection(db, "leads"), { ...business, timestamp: Timestamp.now() });
       alert("Lead saved successfully!");
     } catch (error) {
       console.error("Error saving lead:", error);
@@ -87,7 +81,6 @@ const App: React.FC = () => {
     try {
       await loadGoogleMapsSDK();
       if (!window.google || !window.google.maps) {
-        console.error("Google Maps SDK not loaded");
         setSearchState("error");
         return;
       }
@@ -127,67 +120,112 @@ const App: React.FC = () => {
   // Render
   // -----------------------
   return (
-    <div className="container mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6">Local Business Finder</h1>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-6xl mx-auto">
+        <h1 className="text-4xl font-bold mb-8 text-center text-gray-800">
+          Local Business Finder
+        </h1>
 
-      {/* Search Form */}
-      <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div>
-          <label htmlFor="businessType" className="block mb-1 font-medium">
-            Business Type
-          </label>
+        {/* Search Form */}
+        <form
+          onSubmit={handleSearch}
+          className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8"
+        >
           <input
-            id="businessType"
-            className="border p-2 rounded w-full"
+            type="text"
+            placeholder="Business Type (e.g., Restaurant)"
             value={searchParams.businessType}
-            onChange={(e) => setSearchParams({ ...searchParams, businessType: e.target.value })}
-            placeholder="e.g., Restaurant, Salon"
+            onChange={(e) =>
+              setSearchParams({ ...searchParams, businessType: e.target.value })
+            }
+            className="p-3 rounded border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-        </div>
-        <div>
-          <label htmlFor="location" className="block mb-1 font-medium">
-            Location
-          </label>
           <input
-            id="location"
-            className="border p-2 rounded w-full"
+            type="text"
+            placeholder="Location (e.g., New York, NY)"
             value={searchParams.location}
-            onChange={(e) => setSearchParams({ ...searchParams, location: e.target.value })}
-            placeholder="e.g., New York, NY"
+            onChange={(e) =>
+              setSearchParams({ ...searchParams, location: e.target.value })
+            }
+            className="p-3 rounded border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-        </div>
-        <div className="flex items-end">
-          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded w-full">
+          <button
+            type="submit"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded p-3 transition"
+          >
             Search
           </button>
-        </div>
-      </form>
+        </form>
 
-      {/* Search Results */}
-      {searchState === "loading" && <p>Searching businesses...</p>}
-      {searchState === "error" && <p className="text-red-500">No businesses found. Try again.</p>}
+        {searchState === "loading" && (
+          <p className="text-center text-gray-600 mb-4">Searching businesses...</p>
+        )}
+        {searchState === "error" && (
+          <p className="text-center text-red-500 mb-4">No businesses found or API error.</p>
+        )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {searchResults.map((business) => (
-          <div key={business.apiId} className="border p-4 rounded-lg shadow">
-            <h2 className="text-xl font-semibold">{business.name}</h2>
-            <p>{business.address}</p>
-            <p>{business.phone}</p>
-            {business.website !== "N/A" ? (
-              <a href={business.website} target="_blank" rel="noopener noreferrer" className="text-blue-600">
-                {business.website}
-              </a>
-            ) : (
-              <p className="text-gray-500">No website</p>
-            )}
-            <button
-              className="mt-3 bg-green-600 text-white px-3 py-1 rounded"
-              onClick={() => saveLead(business)}
-            >
-              Save Lead
-            </button>
+        {searchResults.length > 0 && (
+          <div className="overflow-x-auto bg-white rounded shadow">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider">
+                    Name
+                  </th>
+                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider">
+                    Address
+                  </th>
+                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider">
+                    Phone
+                  </th>
+                  <th className="px-6 py-3 text-left text-sm font-medium text-gray-700 uppercase tracking-wider">
+                    Website
+                  </th>
+                  <th className="px-6 py-3 text-center text-sm font-medium text-gray-700 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {searchResults.map((business) => (
+                  <tr key={business.apiId} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-800 font-medium">
+                      {business.name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-600">
+                      {business.address}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-600">
+                      {business.phone}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-blue-600">
+                      {business.website !== "N/A" ? (
+                        <a
+                          href={business.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline"
+                        >
+                          {business.website}
+                        </a>
+                      ) : (
+                        "No website"
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <button
+                        onClick={() => saveLead(business)}
+                        className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded transition"
+                      >
+                        Save Lead
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
