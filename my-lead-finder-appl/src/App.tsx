@@ -60,7 +60,7 @@ const loadGoogleMapsSDK = (): Promise<void> => {
 };
 
 // -----------------------
-// Main Component
+// Main App Component
 // -----------------------
 const App: React.FC = () => {
   const [searchParams, setSearchParams] = useState({ businessType: "", location: "" });
@@ -107,9 +107,7 @@ const App: React.FC = () => {
           contacted: false,
         }));
 
-        // -----------------------
         // Check Firestore for previously contacted leads
-        // -----------------------
         const leadsQuery = query(
           collection(db, "leads"),
           where("businessType", "==", searchParams.businessType),
@@ -117,9 +115,7 @@ const App: React.FC = () => {
         );
         const querySnapshot = await getDocs(leadsQuery);
 
-        const contactedApiIds = new Set(
-          querySnapshot.docs.map((doc) => doc.data().apiId)
-        );
+        const contactedApiIds = new Set(querySnapshot.docs.map((doc) => doc.data().apiId));
 
         const updatedBusinesses = businesses.map((b) => ({
           ...b,
@@ -173,21 +169,25 @@ const App: React.FC = () => {
   // Render
   // -----------------------
   return (
-    <div className="container mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6 text-center">Local Business Finder</h1>
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center">
+      {/* Heading */}
+      <header className="text-center py-12">
+        <h1 className="text-5xl font-bold">Local Business Finder</h1>
+      </header>
 
-      {/* Search Form */}
+      {/* Centered Search Form */}
       <form
         onSubmit={handleSearch}
-        className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-white p-6 rounded shadow"
+        className="w-full max-w-4xl bg-white p-8 rounded shadow grid grid-cols-1 md:grid-cols-3 gap-6 mt-12"
       >
+        {/* Business Type */}
         <div>
           <label htmlFor="businessType" className="block mb-1 font-medium">
             Business Type
           </label>
           <input
             id="businessType"
-            className="border p-2 rounded w-full"
+            className="border p-3 rounded w-full"
             value={searchParams.businessType}
             onChange={(e) =>
               setSearchParams({ ...searchParams, businessType: e.target.value })
@@ -195,13 +195,15 @@ const App: React.FC = () => {
             placeholder="e.g., Restaurant, Salon"
           />
         </div>
+
+        {/* Location */}
         <div>
-          <label htmlFor="location" className="block mb-1 font-medium">
+          <label htmlFor="location" className="block mb-2 font-medium">
             Location
           </label>
           <input
             id="location"
-            className="border p-2 rounded w-full"
+            className="border p-3 rounded w-full"
             value={searchParams.location}
             onChange={(e) =>
               setSearchParams({ ...searchParams, location: e.target.value })
@@ -209,10 +211,12 @@ const App: React.FC = () => {
             placeholder="e.g., New York, NY"
           />
         </div>
+
+        {/* Submit */}
         <div className="flex items-end">
           <button
             type="submit"
-            className="bg-blue-600 text-white px-4 py-2 rounded w-full hover:bg-blue-700"
+            className="bg-blue-600 text-white px-6 py-3 rounded w-full hover:bg-blue-700"
           >
             Search
           </button>
@@ -220,56 +224,63 @@ const App: React.FC = () => {
       </form>
 
       {/* Search Results */}
-      {searchState === "loading" && <p>Searching businesses...</p>}
-      {searchState === "error" && (
-        <p className="text-red-500">No businesses found. Try again.</p>
-      )}
+      <div className="w-full max-w-6xl mt-12 px-4">
+        {searchState === "loading" && <p>Searching businesses...</p>}
+        {searchState === "error" && (
+          <p className="text-red-500">No businesses found. Try again.</p>
+        )}
 
-      {searchState === "success" && searchResults.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-white rounded shadow">
-            <thead className="bg-gray-200">
-              <tr>
-                <th className="py-2 px-4 text-left">Name</th>
-                <th className="py-2 px-4 text-left">Address</th>
-                <th className="py-2 px-4 text-left">Phone</th>
-                <th className="py-2 px-4 text-left">Website</th>
-                <th className="py-2 px-4 text-center">Contacted</th>
-              </tr>
-            </thead>
-            <tbody>
-              {searchResults.map((b, i) => (
-                <tr key={b.apiId} className="border-b">
-                  <td className="py-2 px-4">{b.name}</td>
-                  <td className="py-2 px-4">{b.address}</td>
-                  <td className="py-2 px-4">{b.phone}</td>
-                  <td className="py-2 px-4">
-                    {b.website !== "N/A" ? (
-                      <a
-                        href={b.website}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline"
-                      >
-                        {b.website}
-                      </a>
-                    ) : (
-                      "N/A"
-                    )}
-                  </td>
-                  <td className="py-2 px-4 text-center">
-                    <input
-                      type="checkbox"
-                      checked={b.contacted || false}
-                      onChange={() => handleCheckboxChange(i)}
-                    />
-                  </td>
+        {searchState === "success" && searchResults.length > 0 && (
+          <div className="overflow-x-auto w-full max-w-6xl mx-auto mt-12 px-4">
+            <table className="min-w-full bg-white rounded shadow text-left">
+              <thead className="bg-gray-200">
+                <tr>
+                  <th className="py-2 px-4 text-left">#</th> {/* Row number */}
+                  <th className="py-2 px-4">Name</th>
+                  <th className="py-2 px-4">Address</th>
+                  <th className="py-2 px-4">Phone</th>
+                  <th className="py-2 px-4">Website</th>
+                  <th className="py-2 px-4 text-center">Contacted</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {searchResults.map((b, i) => (
+                  <tr
+                    key={b.apiId}
+                    className={i % 2 === 0 ? "bg-gray-50 border-b" : "bg-white border-b"}
+                  >
+                    <td className="py-2 px-4">{i + 1}</td> {/* Row number */}
+                    <td className="py-2 px-4">{b.name}</td>
+                    <td className="py-2 px-4">{b.address}</td>
+                    <td className="py-2 px-4">{b.phone}</td>
+                    <td className="py-2 px-4">
+                      {b.website !== "N/A" ? (
+                        <a
+                          href={b.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline"
+                        >
+                          {b.website}
+                        </a>
+                      ) : (
+                        "N/A"
+                      )}
+                    </td>
+                    <td className="py-2 px-4 text-center">
+                      <input
+                        type="checkbox"
+                        checked={b.contacted || false}
+                        onChange={() => handleCheckboxChange(i)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
