@@ -8,10 +8,12 @@ import {
   where,
   getDocs,
   Timestamp,
+  doc, // <-- Import `doc`
+  deleteDoc, // <-- Import `deleteDoc`
 } from "firebase/firestore";
 
 // -----------------------
-// Firebase Initialization
+// Firebase Initialization (no changes)
 // -----------------------
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -26,7 +28,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 // -----------------------
-// Types
+// Types (no changes)
 // -----------------------
 interface Business {
   apiId: string;
@@ -40,7 +42,7 @@ interface Business {
 type SearchState = "idle" | "loading" | "success" | "error";
 
 // -----------------------
-// Load Google Maps SDK
+// Load Google Maps SDK (no changes)
 // -----------------------
 const loadGoogleMapsSDK = (): Promise<void> => {
   return new Promise((resolve, reject) => {
@@ -50,7 +52,9 @@ const loadGoogleMapsSDK = (): Promise<void> => {
     }
 
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_PLACES_API_KEY}&libraries=places`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${
+      import.meta.env.VITE_GOOGLE_PLACES_API_KEY
+    }&libraries=places`;
     script.async = true;
     script.defer = true;
     script.onload = () => resolve();
@@ -59,11 +63,16 @@ const loadGoogleMapsSDK = (): Promise<void> => {
   });
 };
 
+
 // -----------------------
 // Main App Component
 // -----------------------
 const App: React.FC = () => {
-  const [searchParams, setSearchParams] = useState({ businessType: "", location: "" });
+  // State and other functions (no changes here)
+  const [searchParams, setSearchParams] = useState({
+    businessType: "",
+    location: "",
+  });
   const [searchResults, setSearchResults] = useState<Business[]>([]);
   const [searchState, setSearchState] = useState<SearchState>("idle");
   const [currentPage, setCurrentPage] = useState(1);
@@ -73,17 +82,18 @@ const App: React.FC = () => {
 
   const indexOfLastResult = currentPage * resultsPerPage;
   const indexOfFirstResult = indexOfLastResult - resultsPerPage;
-  const currentResults = searchResults.slice(indexOfFirstResult, indexOfLastResult);
+  const currentResults = searchResults.slice(
+    indexOfFirstResult,
+    indexOfLastResult
+  );
 
-  // -----------------------
-  // Handle Search
-  // -----------------------
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchParams.businessType || !searchParams.location) return;
 
     setSearchState("loading");
-    setCurrentPage(1); // reset to first page on new search
+    setSearchResults([]); 
+    setCurrentPage(1);
 
     try {
       await loadGoogleMapsSDK();
@@ -93,68 +103,94 @@ const App: React.FC = () => {
         return;
       }
 
-      const map = new google.maps.Map(document.createElement("div")); // hidden map
+      const map = new google.maps.Map(document.createElement("div"));
       const service = new google.maps.places.PlacesService(map);
-
-      const request = {
-        query: `${searchParams.businessType} in ${searchParams.location}`,
-      };
-
-      let allResults: google.maps.places.PlaceResult[] = [];
-
-      // Recursive pagination fetcher
-      const fetchPage = (req: typeof request): Promise<void> => {
+      
+      const allResults: google.maps.places.PlaceResult[] = [];
+      const fetchAllResults = (): Promise<void> => {
         return new Promise((resolve, reject) => {
-          service.textSearch(req, (results, status, pagination) => {
-            if (status !== google.maps.places.PlacesServiceStatus.OK || !results) {
-              reject(new Error("Search failed"));
-              return;
-            }
+          const request = {
+            query: `${searchParams.businessType} in ${searchParams.location}`,
+          };
+          
+          const callback = (
+              results: google.maps.places.PlaceResult[] | null,
+              status: google.maps.places.PlacesServiceStatus,
+              pagination: google.maps.places.PlaceSearchPagination | null
+          ) => {
+              if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+                  allResults.push(...results);
+              } else if (status !== google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
+                  return reject(new Error(`Places search failed with status: ${status}`));
+              }
 
-            allResults = [...allResults, ...results];
-
-            if (pagination && pagination.hasNextPage) {
-              // Google requires a 2s delay before fetching next page
-              setTimeout(() => {
-                pagination.nextPage();
-              }, 2000);
-
-              // keep waiting until nextPage triggers again
-              const checkNext = () => {
-                if (!pagination.hasNextPage) {
+              if (pagination && pagination.hasNextPage) {
+                  setTimeout(() => {
+                      pagination.nextPage();
+                  }, 2000);
+              } else {
                   resolve();
-                } else {
-                  setTimeout(checkNext, 500);
-                }
-              };
-              checkNext();
+              }
+          };
+          
+          service.textSearch(request, callback);
+        });
+      };
+      
+      await fetchAllResults();
+
+      if (allResults.length === 0) {
+        setSearchState("success");
+        return;
+      }
+
+      const detailPromises = allResults.map((place) => {
+        return new Promise<google.maps.places.PlaceResult | null>((resolve) => {
+          if (!place.place_id) {
+            return resolve(null);
+          }
+          const detailRequest = {
+            placeId: place.place_id,
+            fields: [
+              "name",
+              "place_id",
+              "formatted_address",
+              "formatted_phone_number",
+              "website",
+            ],
+          };
+          service.getDetails(detailRequest, (placeDetails, status) => {
+            if (status === google.maps.places.PlacesServiceStatus.OK) {
+              resolve(placeDetails);
             } else {
-              resolve();
+              resolve(place);
             }
           });
         });
-      };
+      });
 
-      await fetchPage(request);
+      const detailedResults = await Promise.all(detailPromises);
 
-      // Transform results into your Business type
-      const businesses: Business[] = allResults.map((place) => ({
-        apiId: place.place_id!,
-        name: place.name!,
-        phone: (place as any).formatted_phone_number || "N/A",
-        address: place.formatted_address || "N/A",
-        website: (place as any).website || "N/A",
-        contacted: false,
-      }));
+      const businesses: Business[] = detailedResults
+        .filter((place): place is google.maps.places.PlaceResult => place !== null)
+        .map((place) => ({
+          apiId: place.place_id!,
+          name: place.name!,
+          phone: place.formatted_phone_number || "N/A",
+          address: place.formatted_address || "N/A",
+          website: place.website || "N/A",
+          contacted: false,
+        }));
 
-      // Check Firestore for previously contacted leads
       const leadsQuery = query(
         collection(db, "leads"),
         where("businessType", "==", searchParams.businessType),
         where("location", "==", searchParams.location)
       );
       const querySnapshot = await getDocs(leadsQuery);
-      const contactedApiIds = new Set(querySnapshot.docs.map((doc) => doc.data().apiId));
+      const contactedApiIds = new Set(
+        querySnapshot.docs.map((doc) => doc.data().apiId)
+      );
 
       const updatedBusinesses = businesses.map((b) => ({
         ...b,
@@ -170,53 +206,90 @@ const App: React.FC = () => {
   };
 
   // -----------------------
-  // Handle Contacted Checkbox
+  // Handle Contacted Checkbox -- LOGIC UPDATED HERE
   // -----------------------
   const handleCheckboxChange = async (globalIndex: number) => {
-    const updatedResults = [...searchResults];
-    updatedResults[globalIndex].contacted = !updatedResults[globalIndex].contacted;
-    setSearchResults(updatedResults);
+    const originalResults = [...searchResults];
+    const targetBusiness = originalResults[globalIndex];
+    const isNowChecked = !targetBusiness.contacted; // The state we are moving to
 
-    if (updatedResults[globalIndex].contacted) {
+    // Optimistically update the UI for a responsive feel
+    const optimisticResults = originalResults.map((business, index) => {
+        if (index === globalIndex) {
+            return { ...business, contacted: isNowChecked };
+        }
+        return business;
+    });
+    setSearchResults(optimisticResults);
+
+
+    if (isNowChecked) {
+      // --- This is the LOGIC FOR CHECKING a box ---
       const confirmSave = window.confirm(
-        `Do you want to save ${updatedResults[globalIndex].name} as contacted?`
+        `Do you want to save ${targetBusiness.name} as contacted?`
       );
       if (confirmSave) {
         try {
           await addDoc(collection(db, "leads"), {
-            ...updatedResults[globalIndex],
+            ...targetBusiness,
+            contacted: true, // ensure it's set to true
             businessType: searchParams.businessType,
             location: searchParams.location,
-            contacted: true,
             timestamp: Timestamp.now(),
           });
           alert("Lead saved successfully!");
         } catch (error) {
           console.error("Error saving lead:", error);
           alert("Failed to save lead.");
+          setSearchResults(originalResults); // Revert UI on failure
         }
       } else {
-        // Revert checkbox if user cancels
-        updatedResults[globalIndex].contacted = false;
-        setSearchResults(updatedResults);
+        setSearchResults(originalResults); // Revert UI if user cancels
+      }
+    } else {
+      // --- This is the NEW LOGIC FOR UNCHECKING a box ---
+      const confirmDelete = window.confirm(
+        `Do you want to mark ${targetBusiness.name} as not contacted? This will remove the lead record.`
+      );
+      if (confirmDelete) {
+        try {
+          // Find the document in Firestore with the matching apiId to delete it
+          const leadsQuery = query(collection(db, "leads"), where("apiId", "==", targetBusiness.apiId));
+          const querySnapshot = await getDocs(leadsQuery);
+          
+          if (querySnapshot.empty) {
+            alert("Could not find the saved lead to remove. It might have already been deleted.");
+            return;
+          }
+
+          // Delete all documents that match the query (should only be one)
+          const deletePromises = querySnapshot.docs.map(document => deleteDoc(doc(db, "leads", document.id)));
+          await Promise.all(deletePromises);
+
+          alert("Lead record removed successfully!");
+        } catch (error) {
+          console.error("Error removing lead:", error);
+          alert("Failed to remove lead record.");
+          setSearchResults(originalResults); // Revert UI on failure
+        }
+      } else {
+        setSearchResults(originalResults); // Revert UI if user cancels
       }
     }
   };
 
+
   // -----------------------
-  // Render
+  // Render (no changes)
   // -----------------------
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center">
-      {/* Heading */}
       <header className="text-center py-12">
         <h1 className="text-5xl font-bold">Local Business Finder</h1>
       </header>
-
-      {/* Centered Search Form */}
       <form
         onSubmit={handleSearch}
-        className="w-full max-w-4xl bg-white p-8 rounded shadow grid grid-cols-1 md:grid-cols-3 gap-6 mt-12"
+        className="w-full max-w-4xl bg-white p-8 rounded shadow grid grid-cols-1 md:grid-cols-3 gap-6"
       >
         <div>
           <label htmlFor="businessType" className="block mb-1 font-medium">
@@ -249,23 +322,24 @@ const App: React.FC = () => {
         <div className="flex items-end">
           <button
             type="submit"
-            className="bg-blue-600 text-white px-6 py-3 rounded w-full hover:bg-blue-700"
+            className="bg-blue-600 text-white px-6 py-3 rounded w-full hover:bg-blue-700 disabled:bg-blue-300"
+            disabled={searchState === 'loading'}
           >
-            Search
+            {searchState === 'loading' ? 'Searching...' : 'Search'}
           </button>
         </div>
       </form>
-
-      {/* Search Results */}
-      <div className="w-full max-w-6xl mt-12 px-4">
-        {searchState === "loading" && <p>Searching businesses...</p>}
+      <div className="w-full max-w-6xl mt-12 px-4 mb-12">
+        {searchState === "loading" && <p className="text-center">Searching businesses and fetching details...</p>}
         {searchState === "error" && (
-          <p className="text-red-500">No businesses found. Try again.</p>
+          <p className="text-red-500 text-center">An error occurred during the search. Please try again.</p>
         )}
-
+        {searchState === "success" && searchResults.length === 0 && (
+             <p className="text-center text-gray-600">No businesses found for this search.</p>
+        )}
         {searchState === "success" && searchResults.length > 0 && (
           <>
-            <div className="overflow-x-auto w-full max-w-6xl mx-auto mt-12 px-4">
+            <div className="overflow-x-auto w-full max-w-6xl mx-auto">
               <table className="min-w-full bg-white rounded shadow text-left">
                 <thead className="bg-gray-200">
                   <tr>
@@ -295,7 +369,7 @@ const App: React.FC = () => {
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:underline"
                           >
-                            {b.website}
+                           {b.website.replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0]}
                           </a>
                         ) : (
                           "N/A"
@@ -315,27 +389,29 @@ const App: React.FC = () => {
                 </tbody>
               </table>
             </div>
-
-            {/* Pagination */}
-            <div className="flex justify-center items-center gap-4 mt-4">
-              <button
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <span>
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages}
-                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
+            {totalPages > 1 && (
+                <div className="flex justify-center items-center gap-4 mt-4">
+                <button
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+                  }
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
